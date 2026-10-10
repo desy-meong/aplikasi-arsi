@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Manajemen Proyek — Gantt Chart</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <header class="kepala">
+    <div class="merek">
+      <div class="logo" aria-hidden="true">📊</div>
+      <div>
+        <h1>Manajemen Proyek</h1>
+        <p class="sub">Gantt Chart · tersimpan otomatis di browser (localStorage)</p>
+      </div>
+    </div>
+    <div class="aksi-kepala">
+      <button type="button" class="btn" id="btnHariIni">⌖ Hari Ini</button>
+      <button type="button" class="btn" id="btnKalender">🗓 Kalender Proyek</button>
+      <button type="button" class="btn" id="btnContoh">↻ Muat Contoh</button>
+      <button type="button" class="btn bahaya" id="btnReset">Hapus Semua</button>
+      <button type="button" class="btn utama" id="btnTambah">＋ Tambah Tugas</button>
+    </div>
+  </header>
+
+  <div class="banner" id="bannerPenyimpanan" hidden>
+    ⚠ Browser ini memblokir penyimpanan lokal (localStorage). Data hanya bertahan selama tab ini terbuka.
+  </div>
+
+  <section class="ringkasan" aria-label="Ringkasan proyek">
+    <div class="stat"><b id="stTotal">0</b><span>Tugas</span></div>
+    <div class="stat"><b id="stInduk">0</b><span>Tugas utama</span></div>
+    <div class="stat"><b id="stAnak">0</b><span>Sub-tugas</span></div>
+    <div class="stat"><b id="stRentang">—</b><span>Rentang proyek</span></div>
+    <div class="stat"><b id="stHariIni">—</b><span>Hari ini</span></div>
+    <div class="stat"><b id="stLibur">0</b><span>Hari libur</span></div>
+  </section>
+
+  <main class="kartu">
+    <div class="toolbar" id="toolbar">
+      <div class="legenda">
+        <span class="leg-judul">Prioritas</span>
+        <span class="leg"><i class="kotak pr-tinggi"></i>Tinggi</span>
+        <span class="leg"><i class="kotak pr-sedang"></i>Sedang</span>
+        <span class="leg"><i class="kotak pr-rendah"></i>Rendah</span>
+        <span class="leg"><i class="kotak kotak-pek"></i>Akhir pekan</span>
+        <span class="leg"><i class="kotak kotak-libur"></i>Hari libur</span>
+        <span class="leg"><i class="kotak kotak-ini"></i>Hari ini</span>
+        <span class="leg"><svg class="ik-panah" viewBox="0 0 26 12" width="26" height="12" aria-hidden="true"><path d="M1 1 H12 V11 H19" fill="none" stroke="#64748b" stroke-width="1.6"/><path d="M18 7 L25 11 L18 11 Z" fill="#64748b"/></svg>Pranala tugas</span>
+      </div>
+      <label class="opsi" for="chkAkhirPekan">
+        <input type="checkbox" id="chkAkhirPekan"> Sembunyikan hari non-kerja
+      </label>
+    </div>
+
+    <div class="peringatan" id="peringatanRentang" hidden></div>
+
+    <div class="gantt-scroll" id="ganttScroll">
+      <div class="gantt-inner" id="ganttInner">
+        <div class="gantt-kepala">
+          <div class="kepala-kiri">Tugas</div>
+          <div class="kepala-kanan">
+            <div class="baris-bulan" id="barisBulan"></div>
+            <div class="baris-hari" id="barisHari"></div>
+          </div>
+        </div>
+        <div class="gantt-badan" id="ganttBadan">
+          <div class="overlay-garis" id="overlayGaris" aria-hidden="true"></div>
+          <div id="barisWadah"></div>
+        </div>
+        <svg class="panah-layer" id="panahLayer" aria-hidden="true"></svg>
+      </div>
+    </div>
+
+    <div class="kosong" id="kosong" hidden>
+      <div class="kosong-ik" aria-hidden="true">📅</div>
+      <h2>Belum ada tugas</h2>
+      <p>Tambahkan tugas pertama Anda, atau muat data contoh untuk langsung melihat Gantt Chart.</p>
+      <div class="kosong-aksi">
+        <button type="button" class="btn utama" id="btnTambahKosong">＋ Tambah Tugas Pertama</button>
+        <button type="button" class="btn" id="btnContohKosong">↻ Muat Contoh Data</button>
+      </div>
+    </div>
+  </main>
+
+  <footer class="kaki">
+    Aplikasi statis tanpa server — seluruh data tersimpan di localStorage browser Anda.
+    · <a href="uji.html">Jalankan halaman uji fitur</a>
+  </footer>
+
+  <div class="tirai" id="tirai" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="judulModal">
+      <form id="formTugas" novalidate>
+        <header class="modal-kepala">
+          <h2 id="judulModal">Tambah Tugas</h2>
+          <button type="button" class="x" id="btnTutup" aria-label="Tutup dialog">✕</button>
+        </header>
+
+        <div class="modal-badan">
+          <div class="baris-form">
+            <label for="fldNama">Nama tugas <b class="wajib">*</b></label>
+            <input type="text" id="fldNama" maxlength="120" placeholder="Contoh: Rancang antarmuka aplikasi" autocomplete="off">
+            <p class="galat" id="errNama" hidden></p>
+          </div>
+
+          <div class="dua-kolom">
+            <div class="baris-form">
+              <label for="fldMulai">Tanggal mulai <b class="wajib">*</b></label>
+              <input type="date" id="fldMulai">
+              <p class="galat" id="errMulai" hidden></p>
+            </div>
+            <div class="baris-form">
+              <label for="fldDurasi">Durasi — hari kerja <b class="wajib">*</b></label>
+              <input type="number" id="fldDurasi" min="1" max="1000" step="1" value="5" inputmode="numeric">
+              <p class="galat" id="errDurasi" hidden></p>
+            </div>
+          </div>
+
+          <div class="dua-kolom">
+            <div class="baris-form">
+              <label for="fldPrioritas">Prioritas</label>
+              <select id="fldPrioritas">
+                <option value="tinggi">Tinggi</option>
+                <option value="sedang" selected>Sedang</option>
+                <option value="rendah">Rendah</option>
+              </select>
+            </div>
+            <div class="baris-form">
+              <label for="fldWarna">Warna indikator</label>
+              <div class="warna-baris">
+                <input type="color" id="fldWarna" value="#2563eb" aria-label="Pilih warna indikator">
+                <div class="swatch" id="swatch"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="baris-form">
+            <label for="fldInduk">Sub-tugas dari</label>
+            <select id="fldInduk">
+              <option value="">— Tugas utama (tanpa induk) —</option>
+            </select>
+            <p class="catatan" id="catatanInduk">Kosongkan jika ini tugas utama.</p>
+            <p class="galat" id="errInduk" hidden></p>
+          </div>
+
+          <div class="baris-form">
+            <label>Pranala (predecessors)</label>
+            <div class="pranala-wadah" id="daftarPranala"></div>
+            <button type="button" class="btn kecil" id="btnTambahPranala">＋ Tambah Pranala</button>
+            <p class="catatan">
+              <b>FS</b> = tugas ini mulai setelah pranala selesai · <b>SS</b> = tugas ini mulai bersamaan dengan pranala.
+              Jeda dihitung dalam hari kerja sesuai kalender. Tanggal akan digeser otomatis bila melanggar pranala;
+              menghapus pranala tidak mengembalikan tanggal ke semula.
+            </p>
+            <p class="galat" id="errPranala" hidden></p>
+          </div>
+
+          <div class="pratinjau" id="pratinjau"></div>
+        </div>
+
+        <footer class="modal-kaki">
+          <button type="button" class="btn" id="btnBatal">Batal</button>
+          <button type="submit" class="btn utama" id="btnSimpan">Simpan Tugas</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <div class="tirai" id="tiraiKalender" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="judulKalender">
+      <form id="formKalender" novalidate>
+        <header class="modal-kepala">
+          <h2 id="judulKalender">🗓 Kalender Proyek</h2>
+          <button type="button" class="x" id="btnTutupKalender" aria-label="Tutup dialog">✕</button>
+        </header>
+
+        <div class="modal-badan">
+          <div class="baris-form">
+            <label>Hari akhir pekan (bukan hari kerja)</label>
+            <div class="hari-op" id="hariOp"></div>
+            <p class="catatan">Hari tanpa centang dihitung sebagai hari kerja. Durasi tugas dan pranala dihitung ulang otomatis.</p>
+            <p class="galat" id="errAkhirPekan" hidden></p>
+          </div>
+
+          <div class="baris-form">
+            <label>Hari libur khusus</label>
+            <div class="libur-daftar" id="daftarLibur"></div>
+            <button type="button" class="btn kecil" id="btnTambahLibur">＋ Tambah Hari Libur</button>
+            <p class="catatan">Tanggal libur tidak dihitung sebagai hari kerja, sehingga durasi tugas ikut menyesuaikan.</p>
+            <p class="galat" id="errLibur" hidden></p>
+          </div>
+
+          <div class="pratinjau" id="pratinjauKalender"></div>
+        </div>
+
+        <footer class="modal-kaki">
+          <button type="button" class="btn" id="btnKalenderReset">Kembalikan Default</button>
+          <button type="button" class="btn" id="btnKalenderBatal">Batal</button>
+          <button type="submit" class="btn utama" id="btnSimpanKalender">Simpan Kalender</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast-wadah" id="toastWadah" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

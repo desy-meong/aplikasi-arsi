@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Uji Fitur — Manajemen Proyek Gantt</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .uji-wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px 60px; }
+    .uji-kartu { background: #fff; border: 1px solid var(--garis); border-radius: 14px; overflow: hidden; box-shadow: 0 6px 24px rgba(15,23,42,.06); }
+    .uji-kepala { padding: 18px 22px; border-bottom: 1px solid var(--garis); }
+    .uji-kepala h1 { margin: 0 0 4px; font-size: 19px; }
+    .uji-kepala p { margin: 0; color: var(--redup); font-size: 13px; }
+    .uji-isi { padding: 18px 22px; }
+    .uji-tabel { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    .uji-tabel th, .uji-tabel td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--garis-tbl); vertical-align: top; }
+    .uji-tabel th { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--redup); background: #f8fafc; }
+    .uji-tabel tr:last-child td { border-bottom: 0; }
+    .status { display: inline-block; font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 999px; }
+    .status.ok { background: #dcfce7; color: #15803d; }
+    .status.gagal { background: #fee2e2; color: #b91c1c; }
+    .status.lewat { background: #f1f5f9; color: #64748b; }
+    .pesan-gagal { display: block; color: #b91c1c; font-size: 12px; margin-top: 3px; word-break: break-word; }
+    .rekap { display: flex; gap: 26px; flex-wrap: wrap; padding: 14px 22px; background: #f8fafc; border-top: 1px solid var(--garis); }
+    .rekap div { display: flex; flex-direction: column; }
+    .rekap b { font-size: 18px; }
+    .rekap span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--redup); font-weight: 600; }
+    .uji-kaki { padding: 14px 22px; border-top: 1px solid var(--garis); display: flex; gap: 10px; flex-wrap: wrap; }
+    .catatan { margin-top: 14px; font-size: 12.5px; color: var(--redup); line-height: 1.6; }
+  </style>
+</head>
+<body>
+
+  <header class="kepala">
+    <div class="merek">
+      <div class="logo" aria-hidden="true">🧪</div>
+      <div>
+        <h1>Uji Fitur Otomatis</h1>
+        <p class="sub">Menjalankan pengujian terhadap logika aplikasi di browser ini</p>
+      </div>
+    </div>
+    <div class="aksi-kepala">
+      <button type="button" class="btn" id="btnUlang">↻ Ulangi Uji</button>
+      <button type="button" class="btn utama" id="btnKembali">← Buka Aplikasi</button>
+    </div>
+  </header>
+
+  <div class="uji-wrap">
+    <div class="uji-kartu">
+      <div class="uji-kepala">
+        <h1 id="judulRekap">Menjalankan uji…</h1>
+        <p>Uji berjalan terhadap <code>app.js</code> dengan kunci storage terpisah, sehingga data asli Anda tidak tersentuh.</p>
+      </div>
+      <div class="uji-isi">
+        <table class="uji-tabel">
+          <thead>
+            <tr><th style="width:36px">No</th><th>Nama uji</th><th style="width:90px">Status</th></tr>
+          </thead>
+          <tbody id="isiUji"></tbody>
+        </table>
+      </div>
+      <div class="rekap">
+        <div><b id="nTotal">0</b><span>Total uji</span></div>
+        <div><b id="nLulus">0</b><span>Lulus</span></div>
+        <div><b id="nGagal">0</b><span>Gagal</span></div>
+        <div><b id="nLewat">0</b><span>Lewat (diskip)</span></div>
+      </div>
+      <div class="uji-kaki">
+        <a class="btn utama" href="index.html">← Kembali ke Aplikasi</a>
+        <button type="button" class="btn" id="btnUlang2">↻ Jalankan Ulang</button>
+      </div>
+    </div>
+
+    <p class="catatan">
+      Catatan: uji “penyimpanan” otomatis <b>diskip</b> jika browser memblokir localStorage pada
+      protokol <code>file://</code> (misalnya sebagian konfigurasi Safari). Buka lewat server statis
+      lokal bila perlu. Seluruh teks UI aplikasi berbahasa Indonesia.
+    </p>
+  </div>
+
+  <!-- Kunci storage khusus uji, diatur sebelum app.js dimuat -->
+  <script>window.GANTT_KUNCI_STORAGE = 'manajemenProyek.uji';</script>
+  <script src="app.js"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    var App = window.GanttApp;
+    var hasil = [];
+    var KUNCI_UJI = 'manajemenProyek.uji';
+
+    /* ---------- kerangka uji ---------- */
+
+    function ok(kondisi, pesan) {
+      if (!kondisi) throw new Error(pesan || 'kondisi tidak terpenuhi');
+    }
+
+    function sama(a, b, pesan) {
+      if (a !== b) {
+        throw new Error((pesan ? pesan + ': ' : '') +
+          'diharapkan ' + JSON.stringify(b) + ', didapat ' + JSON.stringify(a));
+      }
+    }
+
+    function adaGalat(res, kunci, pesan) {
+      if (!res || !res.galat) throw new Error((pesan || 'diharapkan ada galat') + ' (tidak ada galat dikembalikan)');
+      if (kunci && !res.galat[kunci]) {
+        throw new Error('galat untuk "' + kunci + '" tidak ditemukan. Ada: ' + Object.keys(res.galat).join(', '));
+      }
+    }
+
+    function uji(nama, fn) {
+      try {
+        fn();
+        hasil.push({ nama: nama, status: 'ok' });
+      } catch (e) {
+        hasil.push({ nama: nama, status: 'gagal', pesan: e.message });
+      }
+    }
+
+    function ujiPenyimpanan(nama, fn) {
+      if (!storageAda()) {
+        hasil.push({ nama: nama, status: 'lewat', pesan: 'localStorage tidak tersedia' });
+        return;
+      }
+      uji(nama, fn);
+    }
+
+    function storageAda() {
+      try {
+        localStorage.setItem('__ujiTekan', '1');
+        localStorage.removeItem('__ujiTekan');
+        return true;
+      } catch (e) { return false; }
+    }
+
+    /* ---------- utilitas uji ---------- */
+
+    function reset() {
+      App.hapusSemua();
+    }
+
+    /** Senin terdekat pada atau setelah hari ini (agar uji tidak bergantung tanggal kalender). */
+    function seninTerdekat() {
+      var d = App.hariIni();
+      while (d.getDay() !== 1) d = App.tambahHari(d, 1);
+      return d;
+    }
+
+    /* ---------- kasus uji ---------- */
+
+    function jalankan() {
+      hasil = [];
+      reset();
+
+      // 1. utilitas tanggal
+      uji('Utilitas tanggal: parse & format ISO', function () {
+        var d = App.parseTanggal('2026-05-11');
+        ok(d !== null, 'parseTanggal gagal');
+        sama(App.keISO(d), '2026-05-11', 'round-trip ISO');
+        ok(App.parseTanggal('2026-02-30') === null, 'tanggal tidak valid seharusnya null');
+        ok(App.parseTanggal('11-05-2026') === null, 'format salah seharusnya null');
+        ok(App.parseTanggal('') === null, 'string kosong seharusnya null');
+      });
+
+      uji('Utilitas tanggal: format Indonesia', function () {
+        // 2026-05-11 = Senin
+        sama(App.tglPanjang(App.parseTanggal('2026-05-11')), 'Senin, 11 Mei 2026', 'tglPanjang');
+        sameShort();
+        function sameShort() {
+          sama(App.tglPendek(App.parseTanggal('2026-05-11')), '11 Mei 2026', 'tglPendek');
+        }
+      });
+
+      uji('Durasi hari kerja: Senin + 5 hari = Jumat', function () {
+        var e = App.akhirTugas({ tanggalMulai: '2026-05-11', durasi: 5 });
+        sama(App.keISO(e), '2026-05-15', 'akhir tugas');
+      });
+
+      uji('Durasi hari kerja: durasi 1 = hari yang sama', function () {
+        var e = App.akhirTugas({ tanggalMulai: '2026-05-11', durasi: 1 });
+        sama(App.keISO(e), '2026-05-11', 'akhir tugas');
+      });
+
+      uji('Durasi hari kerja: mulai Sabtu digeser ke Senin', function () {
+        var e = App.akhirTugas({ tanggalMulai: '2026-05-16', durasi: 1 });
+        sama(App.keISO(e), '2026-05-18', 'akhir tugas');
+      });
+
+      uji('Durasi hari kerja: Jumat + 2 hari = Senin berikutnya', function () {
+        var e = App.akhirTugas({ tanggalMulai: '2026-05-15', durasi: 2 });
+        sama(App.keISO(e), '2026-05-18', 'akhir tugas');
+      });
+
+      uji('Durasi hari kerja: durasi tidak valid dianggap 1', function () {
+        var e = App.akhirTugas({ tanggalMulai: '2026-05-11', durasi: 0 });
+        sama(App.keISO(e), '2026-05-11', 'akhir tugas');
+      });
+
+      // 2. escaping
+      uji('Keamanan HTML: escapeHtml menetralkan tag', function () {
+        var s = App.escapeHtml('<img src=x onerror="alert(1)">');
+        ok(s.indexOf('<') === -1, 'masih mengandung <');
+        ok(s.indexOf('&lt;') !== -1, 'harus berupa &lt;');
+        ok(s.indexOf('"') === -1, 'masih mengandung kutip ganda');
+      });
+
+      uji('Keamanan HTML: id berisi kutip/diagonal aman di atribut', function () {
+        var id = 'x" onmouseover="alert(1)';
+        var atribut = 'data-id="' + App.escapeHtml(id) + '"';
+        // kutip milik nilai harus berubah jadi &quot; sehingga yang tersisa
+        // hanya 2 kutip pembungkus atribut (3 bagian saat di-split).
+        sama(atribut.split('"').length, 3,
+          'kutip nilai harus ter-escape agar atribut tidak pecah');
+        ok(atribut.indexOf('&quot;') !== -1, 'kutip ganda harus jadi &quot;');
+        ok(App.escapeHtml("a'b").indexOf('&#39;') !== -1, "apostrof harus ter-escape");
+        // nilai harus kembali utuh setelah di-parse browser (round-trip)
+        var wadah = document.createElement('div');
+        wadah.innerHTML = '<i data-id="' + App.escapeHtml(id) + '"></i>';
+        var kembali = wadah.firstChild.getAttribute('data-id');
+        if (kembali !== id) {
+          throw new Error('atribut tidak round-trip: ' + JSON.stringify(kembali));
+        }
+      });
+
+      // 3. validasi dasar (state kosong)
+      uji('Validasi: nama kosong ditolak', function () {
+        adaGalat(App.validasi({ nama: '   ', tanggalMulai: '2026-05-11', durasi: 3, prioritas: 'sedang', warna: '#2563eb' }, null), 'nama');
+      });
+
+      uji('Validasi: tanggal mulai tidak valid ditolak', function () {
+        adaGalat(App.validasi({ nama: 'Tugas', tanggalMulai: '', durasi: 3 }, null), 'tanggalMulai');
+        adaGalat(App.validasi({ nama: 'Tugas', tanggalMulai: 'bukan-tanggal', durasi: 3 }, null), 'tanggalMulai');
+      });
+
+      uji('Validasi: durasi di luar batas ditolak', function () {
+        adaGalat(App.validasi({ nama: 'Tugas', tanggalMulai: '2026-05-11', durasi: 0 }, null), 'durasi');
+        adaGalat(App.validasi({ nama: 'Tugas', tanggalMulai: '2026-05-11', durasi: -3 }, null), 'durasi');
+        adaGalat(App.validasi({ nama: 'Tugas', tanggalMulai: '2026-05-11', durasi: 1.5 }, null), 'durasi');
+        adaGalat(App.validasi({ nama: 'Tugas', tanggalMulai: '2026-05-11', durasi: 'abc' }, null), 'durasi');
+        adaGalat(App.validasi({ nama: 'Tugas', tanggalMulai: '2026-05-11', durasi: 5000 }, null), 'durasi');
+      });
+
+      uji('Validasi: induk tidak ditemukan ditolak', function () {
+        adaGalat(App.validasi({ nama: 'Tugas', tanggalMulai: '2026-05-11', durasi: 3, parentId: 'tidak-ada' }, null), 'induk');
+      });
+
+      uji('Validasi: data benar tidak menghasilkan galat', function () {
+        var g = App.validasi({ nama: 'Tugas sah', tanggalMulai: '2026-05-11', durasi: 3, prioritas: 'tinggi', warna: '#2563eb' }, null);
+        sama(Object.keys(g).length, 0, 'jumlah galat');
+      });
+
+      // 4. CRUD
+      uji('CRUD: tambah tugas menambah daftar', function () {
+        reset();
+        var res = App.tambah({ nama: 'Tugas A', tanggalMulai: '2026-05-11', durasi: 5, prioritas: 'tinggi', warna: '#dc2626', parentId: null });
+        ok(res.ok, 'tambah gagal: ' + JSON.stringify(res.galat || {}));
+        sama(App.semua().length, 1, 'jumlah tugas');
+        sama(App.semua()[0].nama, 'Tugas A', 'nama tugas');
+        sama(App.semua()[0].parentId, null, 'parentId');
+      });
+
+      uji('CRUD: tambah dengan data tidak valid ditolak', function () {
+        reset();
+        var res = App.tambah({ nama: '', tanggalMulai: '2026-05-11', durasi: 5 });
+        adaGalat(res, 'nama');
+        sama(App.semua().length, 0, 'tugas tidak boleh tersimpan');
+      });
+
+      uji('CRUD: ubah tugas memperbarui field', function () {
+        reset();
+        var res0 = App.tambah({ nama: 'Sebelum', tanggalMulai: '2026-05-11', durasi: 2, prioritas: 'rendah', warna: '#059669', parentId: null });
+        var res = App.ubah(res0.tugas.id, { nama: 'Sesudah', tanggalMulai: '2026-05-18', durasi: 7, prioritas: 'tinggi', warna: '#dc2626', parentId: null });
+        ok(res.ok, 'ubah gagal: ' + JSON.stringify(res.galat || {}));
+        var t = App.semua()[0];
+        sama(t.nama, 'Sesudah', 'nama');
+        sama(t.tanggalMulai, '2026-05-18', 'tanggalMulai');
+        sama(t.durasi, 7, 'durasi');
+        sama(t.prioritas, 'tinggi', 'prioritas');
+        sama(t.warna, '#dc2626', 'warna');
+        sama(App.semua().length, 1, 'jumlah tidak berubah');
+      });
+
+      uji('CRUD: ubah tugas tidak ada ditolak', function () {
+        adaGalat(App.ubah('tidak-ada', { nama: 'X', tanggalMulai: '2026-05-11', durasi: 1 }), 'nama');
+      });
+
+      uji('CRUD: hapus tugas menghilangkan dari daftar', function () {
+        reset();
+        var r = App.tambah({ nama: 'Buang Aku', tanggalMulai: '2026-05-11', durasi: 1, prioritas: 'sedang', warna: '#2563eb', parentId: null });
+        App.hapus(r.tugas.id);
+        sama(App.semua().length, 0, 'jumlah setelah hapus');
+      });
+
+      // 5. sub-tugas
+      uji('Sub-tugas: daftar bertingkat (parent-child)', function () {
+        reset();
+        var induk = App.tambah({ nama: 'Induk', tanggalMulai: '2026-05-11', durasi: 10, prioritas: 'tinggi', warna: '#2563eb', parentId: null });
+        App.tambah({ nama: 'Anak 1', tanggalMulai: '2026-05-11', durasi: 3, prioritas: 'sedang', warna: '#0891b2', parentId: induk.tugas.id });
+        App.tambah({ nama: 'Anak 2', tanggalMulai: '2026-05-14', durasi: 3, prioritas: 'rendah', warna: '#7c3aed', parentId: induk.tugas.id });
+        App.tambah({ nama: 'Induk Kedua', tanggalMulai: '2026-05-20', durasi: 4, prioritas: 'sedang', warna: '#059669', parentId: null });
+
+        var daftar = App.bangunDaftar(App.semua(), true);
+        sama(daftar.length, 4, 'jumlah baris');
+        sama(daftar[0].tugas.nama, 'Induk', 'urutan[0]');
+        ok(daftar[0].depth === 0, 'depth induk harus 0');
+        ok(daftar[0].punyaAnak, 'induk harus punya anak');
+        sama(daftar[0].jumlahAnak, 2, 'jumlah anak induk');
+        ok(daftar[1].depth === 1, 'depth anak 1 harus 1');
+        ok(daftar[2].depth === 1, 'depth anak 2 harus 1');
+        ok(daftar[3].depth === 0, 'depth induk kedua harus 0');
+        // anak terurut berdasarkan tanggal mulai
+        sameUrut(daftar);
+        function sameUrut(d) {
+          ok(d[1].tugas.nama === 'Anak 1' && d[2].tugas.nama === 'Anak 2', 'anak terurut tanggal mulai');
+        }
+      });
+
+      uji('Sub-tugas: induk tidak boleh menjadi anak dirinya sendiri', function () {
+        reset();
+        var induk = App.tambah({ nama: 'Induk', tanggalMulai: '2026-05-11', durasi: 5, prioritas: 'sedang', warna: '#2563eb', parentId: null });
+        adaGalat(App.ubah(induk.tugas.id, {
+          nama: 'Induk', tanggalMulai: '2026-05-11', durasi: 5,
+          prioritas: 'sedang', warna: '#2563eb', parentId: induk.tugas.id
+        }), 'induk');
+      });
+
+      uji('Sub-tugas: siklus induk-anak dicegah', function () {
+        reset();
+        var a = App.tambah({ nama: 'A', tanggalMulai: '2026-05-11', durasi: 5, prioritas: 'sedang', warna: '#2563eb', parentId: null });
+        var b = App.tambah({ nama: 'B', tanggalMulai: '2026-05-12', durasi: 5, prioritas: 'sedang', warna: '#2563eb', parentId: a.tugas.id });
+        // A menjadi anak B (padahal B anak A) -> harus ditolak
+        adaGalat(App.ubah(a.tugas.id, {
+          nama: 'A', tanggalMulai: '2026-05-11', durasi: 5,
+          prioritas: 'sedang', warna: '#2563eb', parentId: b.tugas.id
+        }), 'induk');
+      });
+
+      uji('Sub-tugas: induk boleh dipindah ke luar induk lain', function () {
+        reset();
+        var a = App.tambah({ nama: 'A', tanggalMulai: '2026-05-11', durasi: 5, prioritas: 'sedang', warna: '#2563eb', parentId: null });
+        var b = App.tambah({ nama: 'B', tanggalMulai: '2026-05-12', durasi: 5, prioritas: 'sedang', warna: '#2563eb', parentId: null });
+        var res = App.ubah(a.tugas.id, { nama: 'A', tanggalMulai: '2026-05-11', durasi: 5, prioritas: 'sedang', warna: '#2563eb', parentId: b.tugas.id });
+        ok(res.ok, 'seharusnya sah: ' + JSON.stringify(res.galat || {}));
+        sameAdaAnak(b.tugas.id);
+        function sameAdaAnak(id) {
+          var d = App.bangunDaftar(App.semua(), true);
+          ok(d.length === 2 && d[1].depth === 1, 'A harus jadi anak B');
+        }
+      });
+
+      uji('Sub-tugas: induk ciut menyembunyikan anak', function () {
+        reset();
+        var induk = App.tambah({ nama: 'Induk', tanggalMulai: '2026-05-11', durasi: 10, prioritas: 'sedang', warna: '#2563eb', parentId: null });
+        App.tambah({ nama: 'Anak', tanggalMulai: '2026-05-11', durasi: 3, prioritas: 'sedang', warna: '#0891b2', parentId: induk.tugas.id });
+        App.toggleCiut(induk.tugas.id);
+        var terlihat = App.bangunDaftar(App.semua(), true);
+        sama(terlihat.length, 1, 'anak harus tersembunyi');
+        var semuaNode = App.bangunDaftar(App.semua(), false);
+        sama(semuaNode.length, 2, 'dengan hormatCiut=false semua tampil');
+        App.toggleCiut(induk.tugas.id);
+        sama(App.bangunDaftar(App.semua(), true).length, 2, 'dibuka lagi harus tampil');
+      });
+
+      uji('Sub-tugas: menghapus induk ikut menghapus anak (kaskade)', function () {
+        reset();
+        var induk = App.tambah({ nama: 'Induk', tanggalMulai: '2026-05-11', durasi: 10, prioritas: 'sedang', warna: '#2563eb', parentId: null });
+        var a1 = App.tambah({ nama: 'Anak 1', tanggalMulai: '2026-05-11', durasi: 3, prioritas: 'sedang', warna: '#0891b2', parentId: induk.tugas.id });
+        App.tambah({ nama: 'Cucu', tanggalMulai: '2026-05-11', durasi: 2, prioritas: 'sedang', warna: '#7c3aed', parentId: a1.tugas.id });
+        var n = App.kumpulKeturunan(induk.tugas.id).size;
+        sama(n, 2, 'jumlah keturunan');
+        App.hapus(induk.tugas.id);
+        sama(App.semua().length, 0, 'semua ikut terhapus');
+      });
+
+      ujiPenyimpanan('Sub-tugas: induk yatim dirapikan saat muat', function () {
+        // simpan entri yatim langsung ke storage lalu muat ulang
+        var mentah = {
+          v: 1,
+          tugas: [{
+            id: 'yatim1', nama: 'Yatim', tanggalMulai: '2026-05-11', durasi: 3,
+            prioritas: 'sedang', warna: '#2563eb', parentId: 'hilang', ciut: false, dibuat: 1
+          }]
+        };
+        localStorage.setItem(KUNCI_UJI, JSON.stringify(mentah));
+        App.muat();
+        sama(App.semua().length, 1, 'jumlah');
+        sama(App.semua()[0].parentId, null, 'parentId yatim harus dibersihkan');
+      });
+
+      // 6. penyimpanan
+      ujiPenyimpanan('Penyimpanan: data tersimpan & terbaca ulang', function () {
+        reset();
+        App.tambah({ nama: 'Simpan Dulu', tanggalMulai: '2026-05-11', durasi: 5, prioritas: 'tinggi', warna: '#dc2626', parentId: null });
+        var muatUlang = App.muat();
+        sama(muatUlang.length, 1, 'jumlah setelah muat ulang');
+        sama(muatUlang[0].nama, 'Simpan Dulu', 'nama setelah muat ulang');
+        sama(muatUlang[0].durasi, 5, 'durasi setelah muat ulang');
+        sama(muatUlang[0].prioritas, 'tinggi', 'prioritas setelah muat ulang');
+        sama(muatUlang[0].warna, '#dc2626', 'warna setelah muat ulang');
+      });
+
+      ujiPenyimpanan('Penyimpanan: data rusak di localStorage tidak membuat error', function () {
+        localStorage.setItem(KUNCI_UJI, '{ini bukan json yang valid');
+        var muatUlang = App.muat();
+        sama(muatUlang.length, 0, 'harus kembali kosong tanpa error');
+      });
+
+      ujiPenyimpanan('Penyimpanan: data tidak valid disaring saat muat', function () {
+        var mentah = {
+          v: 1,
+          tugas: [
+            { id: 'ok1', nama: 'Sah', tanggalMulai: '2026-05-11', durasi: 3, prioritas: 'sedang', warna: '#2563eb', parentId: null, ciut: false, dibuat: 1 },
+            { id: 'rusak1', nama: '', tanggalMulai: '2026-05-11', durasi: 3 },
+            null,
+            { id: 'rusak2', nama: 'Durasi aneh', tanggalMulai: '2026-05-11', durasi: 999999 }
+          ]
+        };
+        localStorage.setItem(KUNCI_UJI, JSON.stringify(mentah));
+        var muatUlang = App.muat();
+        sama(muatUlang.length, 2, 'hanya entri sah yang lolos');
+        sama(muatUlang[1].durasi, 1000, 'durasi dibatasi 1000');
+      });
+
+      // 7. timeline
+      uji('Timeline: rentang mencakup semua tugas dan hari ini', function () {
+        reset();
+        App.tambah({ nama: 'Awal', tanggalMulai: App.keISO(App.tambahHari(App.hariIni(), -7)), durasi: 5, prioritas: 'sedang', warna: '#2563eb', parentId: null });
+        App.tambah({ nama: 'Akhir', tanggalMulai: App.keISO(App.tambahHari(App.hariIni(), 30)), durasi: 10, prioritas: 'sedang', warna: '#2563eb', parentId: null });
+        App.setPref({ sembunyikanAkhirPekan: false });
+        App.siapkanTimeline();
+        var hari = App.daftarHariSemua();
+        ok(hari.length > 0, 'daftar hari tidak boleh kosong');
+
+        var semuaTercakup = App.semua().every(function (t) {
+          var i0 = App.cariIndeks(t.tanggalMulai, 1);
+          var akhir = App.akhirTugas(t);
+          var i1 = App.cariIndeks(App.keISO(akhir), -1);
+          return i0 >= 0 && i1 >= 0 && i1 >= i0;
+        });
+        ok(semuaTercakup, 'semua tugas harus punya indeks bar valid');
+
+        var iniHari = App.hariIni();
+        ok(hari[0].getTime() <= iniHari.getTime(), 'rentang mulai sebelum hari ini');
+        ok(hari[hari.length - 1].getTime() >= iniHari.getTime(), 'rentang selesai sesudah hari ini');
+      });
+
+      uji('Timeline: akhir pekan dapat disembunyikan', function () {
+        App.setPref({ sembunyikanAkhirPekan: true });
+        App.siapkanTimeline();
+        var hari = App.daftarHariSemua();
+        var adaAkhirPekan = hari.some(function (d) { return !App.isKerja(d); });
+        ok(!adaAkhirPekan, 'tidak boleh ada Sabtu/Minggu saat disembunyikan');
+        ok(hari.length > 0, 'daftar hari tidak boleh kosong');
+        App.setPref({ sembunyikanAkhirPekan: false });
+        App.siapkanTimeline();
+        var adaLagi = App.daftarHariSemua().some(function (d) { return !App.isKerja(d); });
+        ok(adaLagi, 'akhir pekan muncul lagi setelah pref dimatikan');
+      });
+
+      uji('Timeline: indeks bar konsisten dengan tanggal (Senin→Jumat)', function () {
+        reset();
+        var senin = seninTerdekat();
+        App.tambah({
+          nama: 'Minggu Kerja', tanggalMulai: App.keISO(senin), durasi: 5,
+          prioritas: 'sedang', warna: '#2563eb', parentId: null
+        });
+        App.setPref({ sembunyikanAkhirPekan: false });
+        App.siapkanTimeline();
+        var hari = App.daftarHariSemua();
+        var i0 = App.cariIndeks(App.keISO(senin), 1);
+        var jumat = App.akhirTugas({ tanggalMulai: App.keISO(senin), durasi: 5 });
+        var i1 = App.cariIndeks(App.keISO(jumat), -1);
+
+        ok(i0 >= 0 && i1 >= i0, 'indeks tidak valid');
+        ok(hari[i0].getTime() === senin.getTime(), 'indeks mulai harus menunjuk tanggal mulai');
+        ok(hari[i1].getDay() === 5, 'indeks selesai harus Jumat');
+        sama(i1 - i0, 4, 'rentang kalender Senin→Jumat = 4 hari');
+      });
+
+      uji('Timeline: indeks tanggal di luar rentang mengembalikan -1', function () {
+        reset();
+        App.tambah({ nama: 'Tunggal', tanggalMulai: App.keISO(App.hariIni()), durasi: 3, prioritas: 'sedang', warna: '#2563eb', parentId: null });
+        App.setPref({ sembunyikanAkhirPekan: false });
+        App.siapkanTimeline();
+        // 1990 jauh di luar rentang dan di luar pencarian ±7 hari
+        sama(App.cariIndeks('1990-01-01', 1), -1, 'indeks luar rentang');
+      });
+
+      // 8. data contoh
+      uji('Data contoh: lengkap, valid, dan punya sub-tugas', function () {
+        var contoh = App.dataContoh();
+        ok(contoh.length >= 10, 'minimal 10 tugas contoh');
+        var idSemua = {};
+        contoh.forEach(function (t) { idSemua[t.id] = true; });
+        var adaAnak = false;
+        contoh.forEach(function (t, i) {
+          ok(t.nama && t.nama.trim(), 'nama kosong di indeks ' + i);
+          ok(App.parseTanggal(t.tanggalMulai), 'tanggal tidak valid di indeks ' + i);
+          ok(t.durasi >= 1 && t.durasi <= 1000, 'durasi di luar batas di indeks ' + i);
+          ok(['tinggi', 'sedang', 'rendah'].indexOf(t.prioritas) !== -1, 'prioritas tidak sah di indeks ' + i);
+          ok(/^#[0-9a-fA-F]{6}$/.test(t.warna), 'warna tidak sah di indeks ' + i);
+          if (t.parentId) {
+            adaAnak = true;
+            ok(idSemua[t.parentId], 'induk tidak ada di indeks ' + i);
+            ok(t.parentId !== t.id, 'siklus diri sendiri di indeks ' + i);
+          }
+        });
+        ok(adaAnak, 'data contoh harus punya sub-tugas');
+        var daftar = App.bangunDaftar(contoh, true);
+        sameJumlah(daftar.length, contoh.length);
+        function sameJumlah(a, b) { sama(a, b, 'jumlah baris pohon'); }
+      });
+
+      uji('Data contoh: semua induk berada di atas anaknya', function () {
+        var contoh = App.dataContoh();
+        var daftar = App.bangunDaftar(contoh, true);
+        var posisi = {};
+        daftar.forEach(function (b, i) { posisi[b.tugas.id] = i; });
+        daftar.forEach(function (b) {
+          if (b.tugas.parentId) {
+            ok(posisi[b.tugas.parentId] < posisi[b.tugas.id],
+              'induk harus sebelum anak: ' + b.tugas.nama);
+          }
+        });
+      });
+
+      uji('Aplikasi: API publik tersedia & render tanpa UI aman', function () {
+        ok(typeof App.tambah === 'function', 'API tambah ada');
+        ok(typeof App.ubah === 'function', 'API ubah ada');
+        ok(typeof App.hapus === 'function', 'API hapus ada');
+        ok(typeof App.siapkanTimeline === 'function', 'API timeline ada');
+        reset();
+        App.muat();  // render() dipanggil tanpa UI -> tidak boleh melempar error
+        sama(App.semua().length, 0, 'reset akhir');
+      });
+
+      // 9. pranala (predecessors)
+      uji('Pranala: normalisasi menangani data tidak sah', function () {
+        sama(App.normalisasiPranala(null).length, 0, 'bukan array -> kosong');
+        sama(App.normalisasiPranala('x').length, 0, 'string -> kosong');
+        var h = App.normalisasiPranala([
+          { ke: 'a', jenis: 'SS', jeda: 9999 },      // jeda di luar batas -> clamp
+          { ke: 'a', jenis: 'FS', jeda: 1 },         // duplikat -> dibuang
+          { ke: '', jenis: 'FS', jeda: 0 },          // tanpa tujuan -> dibuang
+          { ke: 'b', jenis: 'XX', jeda: 2 },         // jenis asing -> jadi FS
+          'bukan-objek'
+        ]);
+        sama(h.length, 2, 'hanya entri sah yang lolos');
+        sama(h[0].jenis, 'SS', 'jenis SS dipertahankan');
+        sama(h[0].jeda, 365, 'jeda dibatasi JEDA_MAKS');
+        sama(h[1].jenis, 'FS', 'jenis asing dinormalkan ke FS');
+      });
+
+      function tugasDasar(nama, mulai, durasi) {
+        return App.tambah({ nama: nama, tanggalMulai: mulai, durasi: durasi,
+          prioritas: 'sedang', warna: '#2563eb', parentId: null });
+      }
+
+      uji('Pranala: FS menarik tanggal mulai suksesor', function () {
+        reset();
+        var a = tugasDasar('A', '2026-05-11', 5);   // Senin -> selesai Jumat 15
+        var b = App.tambah({ nama: 'B', tanggalMulai: '2026-05-11', durasi: 2,
+          prioritas: 'sedang', warna: '#2563eb', parentId: null,
+          pranala: [{ ke: a.tugas.id, jenis: 'FS', jeda: 0 }] });
+        ok(b.ok, 'tambah B gagal: ' + JSON.stringify(b.galat || {}));
+        var tb = App.semua().filter(function (t) { return t.nama === 'B'; })[0];
+        sama(tb.tanggalMulai, '2026-05-18', 'B harus digeser ke Senin berikutnya');
+        samePindah(b.pindah, 1, 'jumlah tugas yang digeser');
+        function samePindah(a, bb, p) { sama(a, bb, p); }
+      });
+
+      uji('Pranala: FS dengan jeda hari kerja', function () {
+        reset();
+        var a = tugasDasar('A', '2026-05-11', 5);   // selesai Jumat 15
+        App.tambah({ nama: 'B', tanggalMulai: '2026-05-11', durasi: 1,
+          prioritas: 'sedang', warna: '#2563eb', parentId: null,
+          pranala: [{ ke: a.tugas.id, jenis: 'FS', jeda: 2 }] });
+        // jeda 2 hari kerja setelah Jumat 15 -> Sel 18 (1), Rab 19 (2) + 1 = Kam 20
+        var tb = App.semua().filter(function (t) { return t.nama === 'B'; })[0];
+        sama(tb.tanggalMulai, '2026-05-20', 'jeda 2 hari kerja setelah selesai');
+      });
+
+      uji('Pranala: SS mengunci mulai bersamaan pranala', function () {
+        reset();
+        var a = tugasDasar('A', '2026-05-11', 5);
+        App.tambah({ nama: 'B', tanggalMulai: '2026-05-11', durasi: 1,
+          prioritas: 'sedang', warna: '#2563eb', parentId: null,
+          pranala: [{ ke: a.tugas.id, jenis: 'SS', jeda: 1 }] });
+        var tb = App.semua().filter(function (t) { return t.nama === 'B'; })[0];
+        sama(tb.tanggalMulai, '2026-05-12', 'SS+1 = mulai Selasa');
+      });
+
+      uji('Pranala: rantai A→B→C menyesuaikan berantai', function () {
+        reset();
+        var a = tugasDasar('A', '2026-05-11', 5);      // selesai Jumat 15
+        var b = App.tambah({ nama: 'B', tanggalMulai: '2026-05-11', durasi: 2,
+          prioritas: 'sedang', warna: '#2563eb', parentId: null,
+          pranala: [{ ke: a.tugas.id, jenis: 'FS', jeda: 0 }] });
+        App.tambah({ nama: 'C', tanggalMulai: '2026-05-11', durasi: 2,
+          prioritas: 'sedang', warna: '#2563eb', parentId: null,
+          pranala: [{ ke: b.tugas.id, jenis: 'FS', jeda: 0 }] });
+        var byName = {};
+        App.semua().forEach(function (t) { byName[t.nama] = t.tanggalMulai; });
+        sama(byName.B, '2026-05-18', 'B setelah A');
+        sama(byName.C, '2026-05-20', 'C setelah B (B durasi 2: Sen+Sel)');
+      });
+
+      uji('Pranala: tidak memajukan tugas yang sudah lebih lambat', function () {
+        reset();
+        var a = tugasDasar('A', '2026-05-11', 5);   // batas FS = 2026-05-18
+        var res = App.tambah({ nama: 'B', tanggalMulai: '2026-05-25', durasi: 2,
+          prioritas: 'sedang', warna: '#2563eb', parentId: null,
+          pranala: [{ ke: a.tugas.id, jenis: 'FS', jeda: 0 }] });
+        var tb = App.semua().filter(function (t) { return t.nama === 'B'; })[0];
+        sama(tb.tanggalMulai, '2026-05-25', 'tanggal B tidak boleh berubah');
+        samePindah(res.pindah, 0, 'tidak ada yang digeser');
+        function samePindah(x, y, p) { sama(x, y, p); }
+      });
+
+      uji('Pranala: siklus A↔B ditolak saat validasi', function () {
+        reset();
+        var a = tugasDasar('A', '2026-05-11', 3);
+        var b = App.tambah({ nama: 'B', tanggalMulai: '2026-05-12', durasi: 3,
+          prioritas: 'sedang', warna: '#2563eb', parentId: null,
+          pranala: [{ ke: a.tugas.id, jenis: 'FS', jeda: 0 }] });
+        ok(b.ok, 'B sah');
+        // A sekarang mau bergantung pada B -> siklus, harus ditolak
+        var res = App.ubah(a.tugas.id, {
+          nama: 'A', tanggalMulai: '2026-05-11', durasi: 3, prioritas: 'sedang',
+          warna: '#2563eb', parentId: null,
+          pranala: [{ ke: b.tugas.id, jenis: 'FS', jeda: 0 }]
+        });
+        adaGalat(res, 'pranala');
+      });
+
+      uji('Pranala: pranala diri sendiri ditolak', function () {
+        reset();
+        var a = tugasDasar('A', '2026-05-11', 3);
+        var res = App.ubah(a.tugas.id, {
+          nama: 'A', tanggalMulai: '2026-05-11', durasi: 3, prioritas: 'sedang',
+          warna: '#2563eb', parentId: null,
+          pranala: [{ ke: a.tugas.id, jenis: 'FS', jeda: 0 }]
+        });
+        adaGalat(res, 'pranala');
+      });
+
+      uji('Pranala: jeda & jenis tidak sah ditolak', function () {
+        reset();
+        var a = tugasDasar('A', '2026-05-11', 3);
+        var base = { nama: 'B', tanggalMulai: '2026-05-12', durasi: 1,
+          prioritas: 'sedang', warna: '#2563eb', parentId: null };
+        adaGalat(App.tambah(Object.assign({}, base,
+          { pranala: [{ ke: a.tugas.id, jenis: 'FS', jeda: 999 }] })), 'pranala');
+        adaGalat(App.tambah(Object.assign({}, base,
+          { pranala: [{ ke: a.tugas.id, jenis: 'XX', jeda: 0 }] })), 'pranala');
+        adaGalat(App.tambah(Object.assign({}, base,
+          { pranala: [{ ke: 'tidak-ada', jenis: 'FS', jeda: 0 }] })), 'pranala');
+        adaGalat(App.tambah(Object.assign({}, base,
+          { pranala: [{ ke: a.tugas.id, jenis: 'FS', jeda: -1 }] })), 'pranala');
+        sameJumlah(1, 'hanya tugas A yang tersimpan');
+        function sameJumlah(n, p) { sama(App.semua().length, n, p); }
+      });
+
+      uji('Pranala: tugas pranala dobel ditolak', function () {
+        reset();
+        var a = tugasDasar('A', '2026-05-11', 3);
+        var res = App.tambah({ nama: 'B', tanggalMulai: '2026-05-12', durasi: 1,
+          prioritas: 'sedang', warna: '#2563eb', parentId: null,
+          pranala: [
+            { ke: a.tugas.id, jenis: 'FS', jeda: 0 },
+            { ke: a.tugas.id, jenis: 'SS', jeda: 1 }
+          ] });
+        adaGalat(res, 'pranala');
+      });
+
+      uji('Pranala: menghapus tugas membuang pranala yatim', function () {
+        reset();
+        var a = tugasDasar('A', '2026-05-11', 3);
+        var b = App.tambah({ nama: 'B', tanggalMulai: '2026-05-12', durasi: 1,
+          prioritas: 'sedang', warna: '#2563eb', parentId: null,
+          pranala: [{ ke: a.tugas.id, jenis: 'FS', jeda: 0 }] });
+        App.hapus(a.tugas.id);
+        var tb = App.semua().filter(function (t) { return t.nama === 'B'; })[0];
+        sama(tb.pranala.length, 0, 'pranala yatim harus dibersihkan');
+        sameOk(b.ok, true, 'B tetap ada');
+        function sameOk(x, y, p) { sama(x, y, p); }
+      });
+
+      uji('Pranala: ubah tanpa field pranala tidak menghapus pranala', function () {
+        reset();
+        var a = tugasDasar('A', '2026-05-11', 3);
+        var b = App.tambah({ nama: 'B', tanggalMulai: '2026-05-12', durasi: 1,
+          prioritas: 'sedang', warna: '#2563eb', parentId: null,
+          pranala: [{ ke: a.tugas.id, jenis: 'FS', jeda: 0 }] });
+        var res = App.ubah(b.tugas.id, { nama: 'B Baru', tanggalMulai: '2026-05-20',
+          durasi: 2, prioritas: 'tinggi', warna: '#dc2626', parentId: null });
+        ok(res.ok, 'ubah gagal: ' + JSON.stringify(res.galat || {}));
+        var tb = App.semua().filter(function (t) { return t.nama === 'B Baru'; })[0];
+        samePranala(tb.pranala.length, 1);
+        function samePranala(x, y) { sama(x, y, 'pranala harus bertahan'); }
+      });
+
+      ujiPenyimpanan('Pranala: tersimpan & terbaca ulang', function () {
+        reset();
+        var a = tugasDasar('A', '2026-05-11', 3);
+        App.tambah({ nama: 'B', tanggalMulai: '2026-05-12', durasi: 1,
+          prioritas: 'sedang', warna: '#2563eb', parentId: null,
+          pranala: [{ ke: a.tugas.id, jenis: 'SS', jeda: 2 }] });
+        var ulang = App.muat();
+        var b = ulang.filter(function (t) { return t.nama === 'B'; })[0];
+        sameJumlah(b.pranala.length, 1);
+        sameTujuan(b.pranala[0].ke, a.tugas.id);
+        sameJenis(b.pranala[0].jenis, 'SS');
+        sameJeda(b.pranala[0].jeda, 2);
+        function sameJumlah(x, y) { sama(x, y, 'jumlah pranala'); }
+        function sameTujuan(x, y) { sama(x, y, 'tujuan pranala'); }
+        function sameJenis(x, y) { sama(x, y, 'jenis pranala'); }
+        function sameJeda(x, y) { sama(x, y, 'jeda pranala'); }
+      });
+
+      ujiPenyimpanan('Pranala: siklus di storage diputus saat muat', function () {
+        var mentah = {
+          v: 1,
+          tugas: [
+            { id: 'x1', nama: 'X', tanggalMulai: '2026-05-11', durasi: 2, prioritas: 'sedang',
+              warna: '#2563eb', parentId: null, ciut: false, dibuat: 1,
+              pranala: [{ ke: 'y1', jenis: 'FS', jeda: 0 }] },
+            { id: 'y1', nama: 'Y', tanggalMulai: '2026-05-12', durasi: 2, prioritas: 'sedang',
+              warna: '#2563eb', parentId: null, ciut: false, dibuat: 2,
+              pranala: [{ ke: 'x1', jenis: 'FS', jeda: 0 }] }
+          ]
+        };
+        localStorage.setItem(KUNCI_UJI, JSON.stringify(mentah));
+        var ulang = App.muat();
+        sama(ulang.length, 2, 'kedua tugas tetap ada');
+        var total = ulang.reduce(function (n, t) { return n + t.pranala.length; }, 0);
+        sameTotal(total, 1);
+        function sameTotal(x) {
+          if (x !== 1) throw new Error('siklus harus diputus menyisakan 1 edge, didapat ' + x);
+        }
+      });
+
+      uji('Pranala: geometri jalur panah lurus & elbow', function () {
+        // sebaris & lurus -> garis L
+        sameJalur(App.jalurPanah(0, 0, 100, 0), 'M0 0 L98 0');
+        // beda baris & ruang cukup -> elbow di tengah
+        sameJalur(App.jalurPanah(0, 0, 100, 50), 'M0 0 H50 V50 H98');
+        // tujuan mendekat (mis. SS paralel) -> putar di dekat bar sumber
+        sameJalur(App.jalurPanah(50, 0, 20, 40), 'M50 0 H60 V40 H18');
+        function sameJalur(x, y) {
+          if (x !== y) throw new Error('jalur diharapkan ' + y + ', didapat ' + x);
+        }
+      });
+
+      uji('Pranala: renderPanah aman dipanggil tanpa UI', function () {
+        reset();
+        tugasDasar('A', '2026-05-11', 3);
+        sameBool(App.renderPanah(), false);
+        function sameBool(x) {
+          if (x !== false) throw new Error('tanpa UI harus false, didapat ' + x);
+        }
+      });
+
+      uji('Data contoh: punya pranala FS/SS yang sah', function () {
+        var contoh = App.dataContoh();
+        var idSemua = {};
+        contoh.forEach(function (t) { idSemua[t.id] = true; });
+        var jumlahPranala = 0;
+        contoh.forEach(function (t) {
+          (t.pranala || []).forEach(function (p) {
+            jumlahPranala += 1;
+            ok(idSemua[p.ke], 'tujuan pranala tidak ada di data contoh');
+            ok(p.jenis === 'FS' || p.jenis === 'SS', 'jenis pranala tidak sah');
+            ok(p.jeda >= 0, 'jeda negatif');
+          });
+        });
+        ok(jumlahPranala >= 4, 'data contoh minimal punya 4 pranala');
+      });
+
+      // 10. kalender proyek
+      function dgnKalender(kal, fn) {
+        var awal = App.getKalender();
+        try {
+          var res = App.setKalender(kal);
+          if (res.galat) throw new Error('setKalender gagal: ' + JSON.stringify(res.galat));
+          fn();
+        } finally {
+          App.resetKalender();
+          void awal;
+        }
+      }
+
+      uji('Kalender: akhir pekan default adalah Sabtu & Minggu', function () {
+        App.resetKalender();
+        sameKerja(App.isKerja(App.parseTanggal('2026-05-16')), false, 'Sabtu bukan hari kerja');
+        sameKerja(App.isKerja(App.parseTanggal('2026-05-17')), false, 'Minggu bukan hari kerja');
+        sameKerja(App.isKerja(App.parseTanggal('2026-05-18')), true, 'Senin hari kerja');
+        function sameKerja(x, y, p) { sama(x, y, p); }
+      });
+
+      uji('Kalender: akhir pekan dapat diubah (mis. Jumat-Sabtu)', function () {
+        dgnKalender({ akhirPekan: [5, 6], libur: [] }, function () {
+          sameKerja(App.isKerja(App.parseTanggal('2026-05-15')), false, 'Jumat jadi non-kerja');
+          sameKerja(App.isKerja(App.parseTanggal('2026-05-17')), true, 'Minggu jadi hari kerja');
+          // Jumat 15 tidak dihitung -> durasi 1 hari kerja jatuh pada Minggu 17
+          sameAkhir(App.keISO(App.akhirTugas({ tanggalMulai: '2026-05-15', durasi: 1 })), '2026-05-17');
+        });
+        function sameKerja(x, y, p) { sama(x, y, p); }
+        function sameAkhir(x, y) { sama(x, y, 'akhir tugas pada kalender baru'); }
+      });
+
+      uji('Kalender: hari libur khusus tidak dihitung hari kerja', function () {
+        dgnKalender({ akhirPekan: [0, 6], libur: [{ id: 'l1', tanggal: '2026-05-13', nama: 'Hari Libur Uji' }] }, function () {
+          sameKerja(App.isKerja(App.parseTanggal('2026-05-13')), false, 'tanggal libur bukan hari kerja');
+          sameNama(App.namaLibur('2026-05-13'), 'Hari Libur Uji');
+          sameNama(App.namaLibur('2026-05-14'), null);
+          // Sen 11 + 5 hari kerja, melewati libur 13 & akhir pekan -> Sen 18
+          sameAkhir(App.keISO(App.akhirTugas({ tanggalMulai: '2026-05-11', durasi: 5 })), '2026-05-18');
+        });
+        function sameKerja(x, y, p) { sama(x, y, p); }
+        function sameNama(x, y) { sama(x, y, 'nama libur'); }
+        function sameAkhir(x, y) { sama(x, y, 'akhir tugas melewati hari libur'); }
+      });
+
+      uji('Kalender: validasi menolak semua hari jadi akhir pekan', function () {
+        var g = App.validasiKalender({ akhirPekan: [0, 1, 2, 3, 4, 5, 6], libur: [] });
+        adaGalat({ galat: g.galat }, 'akhirPekan');
+      });
+
+      uji('Kalender: validasi menolak tanggal libur ganda/tidak valid', function () {
+        var g1 = App.validasiKalender({ akhirPekan: [0, 6], libur: [
+          { id: 'a', tanggal: '2026-06-01', nama: 'X' },
+          { id: 'b', tanggal: '2026-06-01', nama: 'Y' }
+        ] });
+        adaGalat({ galat: g1.galat }, 'libur');
+
+        var g2 = App.validasiKalender({ akhirPekan: [0, 6], libur: [{ id: 'a', tanggal: '31-31-2026' }] });
+        adaGalat({ galat: g2.galat }, 'libur');
+
+        var g3 = App.validasiKalender({ akhirPekan: [0, 9], libur: [] });
+        adaGalat({ galat: g3.galat }, 'akhirPekan');
+
+        var g4 = App.validasiKalender(null);
+        adaGalat({ galat: g4.galat }, 'dasar');
+      });
+
+      ujiPenyimpanan('Kalender: tersimpan & terbaca ulang', function () {
+        App.resetKalender();
+        var res = App.setKalender({ akhirPekan: [5, 6], libur: [
+          { id: 'k1', tanggal: '2026-08-17', nama: 'Kemerdekaan' }
+        ] });
+        ok(res.ok, 'setKalender gagal: ' + JSON.stringify(res.galat || {}));
+        App.muatKalender();
+        var k = App.getKalender();
+        sameAP(k.akhirPekan.join(','), '5,6');
+        sameLibur(k.libur.length, 1);
+        sameNama(k.libur[0].nama, 'Kemerdekaan');
+        App.resetKalender();
+        function sameAP(x, y) { sama(x, y, 'akhir pekan tersimpan'); }
+        function sameLibur(x, y) { sama(x, y, 'jumlah libur tersimpan'); }
+        function sameNama(x, y) { sama(x, y, 'nama libur tersimpan'); }
+      });
+
+      uji('Kalender: setKalender menjadwalkan ulang mengikuti pranala', function () {
+        reset();
+        var a = tugasDasar('A', '2026-05-11', 5);   // Jumat 15
+        App.tambah({ nama: 'B', tanggalMulai: '2026-05-11', durasi: 1,
+          prioritas: 'sedang', warna: '#2563eb', parentId: null,
+          pranala: [{ ke: a.tugas.id, jenis: 'FS', jeda: 0 }] });
+        var byName = {};
+        App.semua().forEach(function (t) { byName[t.nama] = t.tanggalMulai; });
+        sameTanggal(byName.B, '2026-05-18', 'sebelum libur ditambahkan');
+
+        var awal = App.getKalender();
+        try {
+          var res = App.setKalender({ akhirPekan: [0, 6], libur: [
+            { id: 'lib1', tanggal: '2026-05-11', nama: 'Libur Uji' }
+          ] });
+          ok(res.ok, 'setKalender gagal');
+          // A tetap mulai 11 tapi selesai mundur ke 18 -> FS menarik B ke 19
+          var ulang = {};
+          App.semua().forEach(function (t) { ulang[t.nama] = t.tanggalMulai; });
+          sameTanggal(ulang.B, '2026-05-19', 'B ikut mundur karena libur di tanggal 11');
+          samePindah(res.pindah, 1);
+        } finally {
+          App.setKalender(awal);
+        }
+        function sameTanggal(x, y, p) { sama(x, y, p); }
+        function samePindah(x, y) { sama(x, y, 'jumlah tugas yang digeser setKalender'); }
+      });
+
+      uji('Kalender: resetKalender mengembalikan default', function () {
+        App.setKalender({ akhirPekan: [1, 2], libur: [{ id: 'z', tanggal: '2026-01-01', nama: 'Tahun Baru' }] });
+        App.resetKalender();
+        var k = App.getKalender();
+        sameAP(k.akhirPekan.join(','), '0,6');
+        sameLibur(k.libur.length, 0);
+        sameKerja(App.isKerja(App.parseTanggal('2026-05-16')), false, 'Sabtu kembali non-kerja');
+        function sameAP(x, y) { sama(x, y, 'akhir pekan default'); }
+        function sameLibur(x, y) { sama(x, y, 'libur kosong lagi'); }
+        function sameKerja(x, y, p) { sama(x, y, p); }
+      });
+
+      uji('Kalender: API & pranala tersedia untuk halaman uji', function () {
+        ok(typeof App.setKalender === 'function', 'API setKalender ada');
+        ok(typeof App.getKalender === 'function', 'API getKalender ada');
+        ok(typeof App.resetKalender === 'function', 'API resetKalender ada');
+        ok(typeof App.muatKalender === 'function', 'API muatKalender ada');
+        ok(typeof App.validasiKalender === 'function', 'API validasiKalender ada');
+        ok(typeof App.jalurPanah === 'function', 'API jalurPanah ada');
+        ok(typeof App.mulaiTerlama === 'function', 'API mulaiTerlama ada');
+        ok(typeof App.jadwalkanUlang === 'function', 'API jadwalkanUlang ada');
+      });
+
+      // rapikan pref & kalender, lalu bersihkan storage uji
+      App.setPref({ sembunyikanAkhirPekan: false });
+      App.resetKalender();
+      reset();
+      if (storageAda()) {
+        try {
+          localStorage.removeItem(KUNCI_UJI);
+          localStorage.removeItem(KUNCI_UJI + '.pref');
+          localStorage.removeItem(KUNCI_UJI + '.kalender');
+        } catch (e) { /* abaikan */ }
+      }
+    }
+
+    /* ---------- tampilan hasil ---------- */
+
+    function render() {
+      var isi = document.getElementById('isiUji');
+      var LABEL = { ok: 'LULUS', gagal: 'GAGAL', lewat: 'LEWAT' };
+      isi.innerHTML = hasil.map(function (h, i) {
+        return '<tr>' +
+          '<td>' + (i + 1) + '</td>' +
+          '<td>' + escapeLokal(h.nama) +
+            (h.pesan ? '<span class="pesan-gagal">✗ ' + escapeLokal(h.pesan) + '</span>' : '') +
+          '</td>' +
+          '<td><span class="status ' + h.status + '">' + LABEL[h.status] + '</span></td>' +
+          '</tr>';
+      }).join('');
+
+      var lulus = hasil.filter(function (h) { return h.status === 'ok'; }).length;
+      var gagal = hasil.filter(function (h) { return h.status === 'gagal'; }).length;
+      var lewat = hasil.filter(function (h) { return h.status === 'lewat'; }).length;
+
+      document.getElementById('nTotal').textContent = String(hasil.length);
+      document.getElementById('nLulus').textContent = String(lulus);
+      document.getElementById('nGagal').textContent = String(gagal);
+      document.getElementById('nLewat').textContent = String(lewat);
+
+      var judul = document.getElementById('judulRekap');
+      if (gagal > 0) {
+        judul.textContent = '❌ ' + gagal + ' uji gagal dari ' + hasil.length + ' uji';
+        judul.style.color = '#b91c1c';
+      } else {
+        judul.textContent = '✅ Semua uji lulus (' + lulus + ' lulus' +
+          (lewat ? ', ' + lewat + ' diskip' : '') + ')';
+        judul.style.color = '#15803d';
+      }
+    }
+
+    function escapeLokal(t) {
+      return String(t).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
+    function jalankanDanRender() {
+      jalankan();
+      render();
+    }
+
+    document.getElementById('btnUlang').addEventListener('click', jalankanDanRender);
+    document.getElementById('btnUlang2').addEventListener('click', jalankanDanRender);
+    document.getElementById('btnKembali').addEventListener('click', function () {
+      window.location.href = 'index.html';
+    });
+
+    jalankanDanRender();
+  })();
+  </script>
+</body>
+</html>
